@@ -1,7 +1,7 @@
 require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const app = express()
 const port = 3000
 
@@ -28,6 +28,8 @@ async function run() {
 
     const db = client.db('tuition-db')
     const usersCollection = db.collection('users')
+    const tuitionCollection = db.collection('tuition')
+    const tutorCollection = db.collection('tutor')
 
     const verifyADMIN = async (req, res, next) => {
       const email = req.tokenEmail
@@ -38,7 +40,38 @@ async function run() {
           .send({ message: 'Admin only Actions!', role: user?.role })
       next()
     }
-    
+
+    app.post('/tuition', async (req, res) => {
+      const tuitionData = req.body
+      const result = await tuitionCollection.insertOne(tuitionData)
+      res.send(result)
+    })
+    app.get('/tuition', async (req, res) => {
+
+      const result = await tuitionCollection.find().toArray()
+      res.send(result)
+    })
+
+    app.patch('/tuition/:id', async (req, res) => {
+      const id = req.params.id
+      const { status } = req.body
+      const result = await tuitionCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status } })
+      const update = await tuitionCollection.findOne({ _id: new ObjectId(id) })
+      res.send(update)
+    })
+
+    app.post('/tutor', async (req, res) => {
+      const tutorData = req.body
+      const result = await tutorCollection.insertOne(tutorData)
+      res.send(result)
+    })
+    app.get('/tutor', async (req, res) => {
+      const result = await tutorCollection.find().toArray()
+      res.send(result)
+    })
+
     app.post('/user', async (req, res) => {
       const userData = req.body
       userData.created_at = new Date().toISOString()
@@ -65,11 +98,11 @@ async function run() {
       res.send({ role: result?.role })
     })
 
-    app.get('/users', async (req, res) => {
-      const adminEmail = req.tokenEmail
-      const result = await usersCollection.find({ email: { $ne: adminEmail } }).toArray()
-      res.send(result)
-    })
+    // app.get('/users', async (req, res) => {
+    //   const adminEmail = req.tokenEmail
+    //   const result = await usersCollection.find({ email: { $ne: adminEmail } }).toArray()
+    //   res.send(result)
+    // })
 
 
 
