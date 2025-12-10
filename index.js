@@ -71,6 +71,15 @@ async function run() {
       const result = await tutorCollection.find().toArray()
       res.send(result)
     })
+    app.patch('/tutor/:id', async (req, res) => {
+      const id = req.params.id
+      const { status } = req.body
+      const result = await tuitionCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: { status } })
+      const update = await tutorCollection.findOne({ _id: new ObjectId(id) })
+      res.send(update)
+    })
 
     app.post('/user', async (req, res) => {
       const userData = req.body
