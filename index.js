@@ -103,36 +103,55 @@ async function run() {
 
 
 
-    app.post('/payment-success', async (req, res) => {
-      const { sessionId } = req.body;
-      const session = await Stripe.checkout.sessions.retrieve(sessionId);
-      const tutorId = session.metadata.tutorId;
-      const existingPayment = await paymentCollection.findOne({
-        transactionId: session.payment_intent
-      });
+app.post('/payment-success', async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    const session = await Stripe.checkout.sessions.retrieve(sessionId);
+    const tutorId = session.metadata.tutorId;
+    const studentEmail = session.metadata.studentEmail;
 
-      await tutorCollection.updateOne(
-        { _id: new ObjectId(tutorId) },
-        { $set: { status: "Approved" } }
-      );
+    // Check duplicate payment
+    const existingPayment = await paymentCollection.findOne({
+      transactionId: session.payment_intent
+    });
 
+    if (!existingPayment) {
       const paymentData = {
-        tutorId,
-        studentEmail: session.metadata.studentEmail,
+        tutorId: new ObjectId(tutorId), // ObjectId হিসেবে save
+        studentEmail,
         transactionId: session.payment_intent,
         amount: session.amount_total / 100,
         status: "Success",
         date: new Date()
       };
-      if (existingPayment) {
-        return res.send({  paymentId: existingPayment._id });
-      }
-      const result = await paymentCollection.insertOne(paymentData);
+      await paymentCollection.insertOne(paymentData);
+    }
 
-      res.send({ paymentId: result.insertedId });
+    // Update tutor status
+    await tutorCollection.updateOne(
+      { _id: new ObjectId(tutorId) },
+      { $set: { status: "Approved" } }
+    );
+
+    // Update tuition document
+    await tuitionCollection.updateOne(
+      { "student.email": studentEmail, status: "Pending" },
+      { $set: { status: "Approved", tutorId: new ObjectId(tutorId) } }
+    );
+
+    res.send({ success: true });
+  } catch (error) {
+    console.error("Payment success error:", error);
+    res.status(500).send({ message: "Payment success processing failed", error });
+  }
+});
+
+
+    app.get('/payment', async (req, res) => {
+      const payments = await paymentCollection.find().toArray();
+      res.send(payments);
     });
-
-
+   
     app.post('/tutor', async (req, res) => {
       const tutorData = req.body
       const result = await tutorCollection.insertOne(tutorData)
@@ -152,11 +171,11 @@ async function run() {
       res.send(update)
     })
 
-  app.get('/tutor/:id', async (req, res) => {
-    const id = req.params.id;
-        const tutor = await tutorCollection.findOne({ _id: new ObjectId(id) });
-        res.send(tutor);
-});
+    app.get('/tutor/:id', async (req, res) => {
+      const id = req.params.id;
+      const tutor = await tutorCollection.findOne({ _id: new ObjectId(id) });
+      res.send(tutor);
+    });
 
 
     app.post('/user', async (req, res) => {
