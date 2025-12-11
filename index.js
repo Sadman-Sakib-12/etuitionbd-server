@@ -24,7 +24,7 @@ const client = new MongoClient(process.env.MONGODB_URI, {
 
 async function run() {
   try {
-    await client.connect()
+    await client.connect();
 
     const db = client.db('tuition-db')
     const usersCollection = db.collection('users')
@@ -74,7 +74,7 @@ async function run() {
     app.patch('/tutor/:id', async (req, res) => {
       const id = req.params.id
       const { status } = req.body
-      const result = await tuitionCollection.updateOne(
+      const result = await tutorCollection.updateOne(
         { _id: new ObjectId(id) },
         { $set: { status } })
       const update = await tutorCollection.findOne({ _id: new ObjectId(id) })
@@ -107,11 +107,11 @@ async function run() {
       res.send({ role: result?.role })
     })
 
-    // app.get('/users', async (req, res) => {
-    //   const adminEmail = req.tokenEmail
-    //   const result = await usersCollection.find({ email: { $ne: adminEmail } }).toArray()
-    //   res.send(result)
-    // })
+    app.get('/users', async (req, res) => {
+      const adminEmail = req.tokenEmail
+      const result = await usersCollection.find({ email: { $ne: adminEmail } }).toArray()
+      res.send(result)
+    })
 
 
 
