@@ -2,12 +2,13 @@ require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const Stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const app = express()
 const port = 3000
 
 app.use(
   cors({
-    origin: 'http://localhost:5173',
+    origin: [process.env.CLIENT_DOMAIN],
     credentials: true,
     optionsSuccessStatus: 200
   })
@@ -30,6 +31,7 @@ async function run() {
     const usersCollection = db.collection('users')
     const tuitionCollection = db.collection('tuition')
     const tutorCollection = db.collection('tutor')
+    const paymentCollection = db.collection('payment')
 
     const verifyADMIN = async (req, res, next) => {
       const email = req.tokenEmail
@@ -62,6 +64,75 @@ async function run() {
       res.send(update)
     })
 
+    app.post('/create-checkout-session', async (req, res) => {
+      try {
+        const paymentInfo = req.body;
+
+
+
+        const session = await Stripe.checkout.sessions.create({
+          payment_method_types: ['card'],
+          mode: 'payment',
+          line_items: [
+            {
+              price_data: {
+                currency: 'usd',
+                product_data: { name: paymentInfo.name },
+                unit_amount: paymentInfo.price * 100,
+              },
+              quantity: 1,
+            },
+          ],
+          customer_email: paymentInfo.student.email,
+          metadata: {
+            tutorId: paymentInfo.tutorId,
+            studentEmail: paymentInfo.student.email,
+          },
+          success_url: `${process.env.CLIENT_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${process.env.CLIENT_DOMAIN}/student/${paymentInfo?.tutorId}`,
+        });
+
+        res.send({ url: session.url });
+      } catch (error) {
+        console.log("Stripe session error:", error);
+        res.status(500).send({ message: "Checkout session failed", error });
+      }
+    });
+
+
+
+
+
+    app.post('/payment-success', async (req, res) => {
+      const { sessionId } = req.body;
+      const session = await Stripe.checkout.sessions.retrieve(sessionId);
+      const tutorId = session.metadata.tutorId;
+      const existingPayment = await paymentCollection.findOne({
+        transactionId: session.payment_intent
+      });
+
+      await tutorCollection.updateOne(
+        { _id: new ObjectId(tutorId) },
+        { $set: { status: "Approved" } }
+      );
+
+      const paymentData = {
+        tutorId,
+        studentEmail: session.metadata.studentEmail,
+        transactionId: session.payment_intent,
+        amount: session.amount_total / 100,
+        status: "Success",
+        date: new Date()
+      };
+      if (existingPayment) {
+        return res.send({  paymentId: existingPayment._id });
+      }
+      const result = await paymentCollection.insertOne(paymentData);
+
+      res.send({ paymentId: result.insertedId });
+    });
+
+
     app.post('/tutor', async (req, res) => {
       const tutorData = req.body
       const result = await tutorCollection.insertOne(tutorData)
@@ -80,6 +151,13 @@ async function run() {
       const update = await tutorCollection.findOne({ _id: new ObjectId(id) })
       res.send(update)
     })
+
+  app.get('/tutor/:id', async (req, res) => {
+    const id = req.params.id;
+        const tutor = await tutorCollection.findOne({ _id: new ObjectId(id) });
+        res.send(tutor);
+});
+
 
     app.post('/user', async (req, res) => {
       const userData = req.body
