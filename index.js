@@ -14,15 +14,12 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Decode service account key
 
 
-// Initialize Firebase Admin
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
 
-// JWT Middleware
 const verifyJWT = async (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).send({ message: "Unauthorized" });
@@ -128,8 +125,6 @@ async function run() {
     });
 
 
-    // Get all approved tuitions for a specific tutor
-
     app.post('/payment-success', async (req, res) => {
       try {
         const { sessionId } = req.body;
@@ -172,7 +167,7 @@ async function run() {
         res.status(500).send({ message: "Payment success processing failed", error });
       }
     });
-    // Delete a tuition by ID
+
     app.delete('/tuition/:id', async (req, res) => {
       const id = req.params.id;
       const result = await tuitionCollection.deleteOne({ _id: new ObjectId(id) });
