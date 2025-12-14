@@ -9,9 +9,10 @@ const serviceAccount = JSON.parse(decoded);
 const port = 3000
 const app = express();
 app.use(cors({
-  origin: [process.env.CLIENT_DOMAIN],
+  origin: process.env.CLIENT_DOMAIN,
   credentials: true
 }));
+
 app.use(express.json());
 
 
@@ -116,21 +117,13 @@ async function run() {
       }
     });
 
-    app.get('/tuitions/tutor/approved/:tutorId', async (req, res) => {
-      const { tutorId } = req.params;
-      const tuitions = await tuitionCollection
-        .find({ tutorId: new ObjectId(tutorId), status: 'Approved' })
-        .toArray();
-      res.send(tuitions);
-    });
 
-
+    // Payment success route
     app.post('/payment-success', async (req, res) => {
-      try {
         const { sessionId } = req.body;
         const session = await Stripe.checkout.sessions.retrieve(sessionId);
         const tutorId = session.metadata.tutorId;
-        const studentEmail = session.metadata.studentEmail;
+        // const studentEmail = session.metadata.studentEmail;
 
         // Check duplicate payment
         const existingPayment = await paymentCollection.findOne({
@@ -140,7 +133,7 @@ async function run() {
         if (!existingPayment) {
           const paymentData = {
             tutorId: new ObjectId(tutorId), // ObjectId হিসেবে save
-            studentEmail,
+            // studentEmail,
             transactionId: session.payment_intent,
             amount: session.amount_total / 100,
             status: "Success",
@@ -157,16 +150,25 @@ async function run() {
 
         // Update tuition document
         await tuitionCollection.updateOne(
-          { "student.email": studentEmail, status: "Pending" },
+          {  status: "Pending" },
           { $set: { status: "Approved", tutorId: new ObjectId(tutorId) } }
         );
 
         res.send({ success: true });
-      } catch (error) {
-        console.error("Payment success error:", error);
-        res.status(500).send({ message: "Payment success processing failed", error });
-      }
+      
     });
+
+    // console.log("METADATA:", session.metadata);
+
+    app.get('/tuitions/tutor/approved/:tutorId', async (req, res) => {
+      const { tutorId } = req.params;
+      const tuitions = await tuitionCollection
+        .find({ tutorId: new ObjectId(tutorId), status: 'Approved' })
+        .toArray();
+      res.send(tuitions);
+    });
+
+
 
     app.delete('/tuition/:id', async (req, res) => {
       const id = req.params.id;
@@ -178,6 +180,14 @@ async function run() {
       const payments = await paymentCollection.find().toArray();
       res.send(payments);
     });
+
+
+
+
+
+
+
+
 
     app.post('/tutor', async (req, res) => {
       const tutorData = req.body
@@ -213,13 +223,16 @@ async function run() {
 
     app.post('/user', async (req, res) => {
       const userData = req.body
+
       userData.created_at = new Date().toISOString()
       userData.last_loggedIn = new Date().toISOString()
-      userData.role = 'student'
-      const query = {
-        email: userData.email,
-      }
+
+
+      userData.role = userData.role || 'student'
+
+      const query = { email: userData.email }
       const alreadyExists = await usersCollection.findOne(query)
+
       if (alreadyExists) {
         const result = await usersCollection.updateOne(query, {
           $set: {
@@ -228,33 +241,34 @@ async function run() {
         })
         return res.send(result)
       }
+
       const result = await usersCollection.insertOne(userData)
       res.send(result)
     })
+
 
     app.get('/user/role', verifyJWT, async (req, res) => {
       const result = await usersCollection.findOne({ email: req.tokenEmail })
       res.send({ role: result?.role })
     })
-
-    app.get('/users', async (req, res) => {
+    app.get('/users', verifyJWT, async (req, res) => {
       const adminEmail = req.tokenEmail
-      const result = await usersCollection.find({ email: { $ne: adminEmail } }).toArray()
+      const result = await usersCollection
+        .find({ email: { $ne: adminEmail } })
+        .toArray()
       res.send(result)
     })
 
     // Update a user
     app.patch('/user/:id', verifyJWT, verifyADMIN, async (req, res) => {
-        const id = req.params.id;
-        const { _id, ...updatedData } = req.body; // remove _id
-        const result = await usersCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: updatedData }
-        );
-        const updatedUser = await usersCollection.findOne({ _id: new ObjectId(id) });
-        res.send(updatedUser);
-     res.status(500).send({ message: "Server error", error: err.message });
-      
+      const id = req.params.id;
+      const { _id, ...updatedData } = req.body; // remove _id
+      const result = await usersCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updatedData }
+      );
+      const updatedUser = await usersCollection.findOne({ _id: new ObjectId(id) });
+      res.send(updatedUser);
     });
 
 
