@@ -3,19 +3,18 @@ const express = require('express')
 const cors = require('cors')
 const admin = require("firebase-admin");
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
-const Stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const decoded = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf-8');
 const serviceAccount = JSON.parse(decoded);
-const port = 3000
+const port = process.env.PORT || 3000
 const app = express();
 app.use(cors({
-  origin: process.env.CLIENT_DOMAIN,
-  credentials: true
+  origin: [process.env.CLIENT_DOMAIN],
+  credentials: true,
+  optionsSuccessStatus: 200,
 }));
 
 app.use(express.json());
-
-
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
@@ -46,7 +45,7 @@ const client = new MongoClient(process.env.MONGODB_URI, {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
 
     const db = client.db('tuition-db')
     const usersCollection = db.collection('users')
@@ -88,7 +87,7 @@ async function run() {
     app.post('/create-checkout-session', async (req, res) => {
       try {
         const paymentInfo = req.body;
-        const session = await Stripe.checkout.sessions.create({
+        const session = await stripe.checkout.sessions.create({
           payment_method_types: ['card'],
           mode: 'payment',
           line_items: [
@@ -120,45 +119,44 @@ async function run() {
 
     // Payment success route
     app.post('/payment-success', async (req, res) => {
-        const { sessionId } = req.body;
-        const session = await Stripe.checkout.sessions.retrieve(sessionId);
-        const tutorId = session.metadata.tutorId;
-        // const studentEmail = session.metadata.studentEmail;
+      const { sessionId } = req.body;
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      const tutorId = session.metadata.tutorId;
+      console.log(session)
+      console.log(tutorId)
+      console.log(sessionId)
+      // const studentEmail = session.metadata.studentEmail;
 
-        // Check duplicate payment
-        const existingPayment = await paymentCollection.findOne({
-          transactionId: session.payment_intent
-        });
+      const existingPayment = await paymentCollection.findOne({
+        transactionId: session.payment_intent
+      });
 
-        if (!existingPayment) {
-          const paymentData = {
-            tutorId: new ObjectId(tutorId), // ObjectId হিসেবে save
-            // studentEmail,
-            transactionId: session.payment_intent,
-            amount: session.amount_total / 100,
-            status: "Success",
-            date: new Date()
-          };
-          await paymentCollection.insertOne(paymentData);
-        }
+      if (!existingPayment) {
+        const paymentData = {
+          tutorId: new ObjectId(tutorId),
+          // studentEmail,
+          transactionId: session.payment_intent,
+          amount: session.amount_total / 100,
+          status: "Success",
+          date: new Date()
+        };
+        await paymentCollection.insertOne(paymentData);
+      }
 
-        // Update tutor status
-        await tutorCollection.updateOne(
-          { _id: new ObjectId(tutorId) },
-          { $set: { status: "Approved" } }
-        );
+      await tutorCollection.updateOne(
+        { _id: new ObjectId(tutorId) },
+        { $set: { status: "Approved" } }
+      );
 
-        // Update tuition document
-        await tuitionCollection.updateOne(
-          {  status: "Pending" },
-          { $set: { status: "Approved", tutorId: new ObjectId(tutorId) } }
-        );
+      // Update tuition document
+      await tuitionCollection.updateOne(
+        { status: "Pending" },
+        { $set: { status: "Approved", tutorId: new ObjectId(tutorId) } }
+      );
 
-        res.send({ success: true });
-      
+      res.send({ success: true });
+
     });
-
-    // console.log("METADATA:", session.metadata);
 
     app.get('/tuitions/tutor/approved/:tutorId', async (req, res) => {
       const { tutorId } = req.params;
@@ -181,19 +179,12 @@ async function run() {
       res.send(payments);
     });
 
-
-
-
-
-
-
-
-
     app.post('/tutor', async (req, res) => {
       const tutorData = req.body
       const result = await tutorCollection.insertOne(tutorData)
       res.send(result)
     })
+
     app.get('/tutor', async (req, res) => {
       const result = await tutorCollection.find().toArray()
       res.send(result)
