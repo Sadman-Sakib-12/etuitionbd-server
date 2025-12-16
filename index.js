@@ -45,7 +45,7 @@ const client = new MongoClient(process.env.MONGODB_URI, {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
 
     const db = client.db('tuition-db')
     const usersCollection = db.collection('users')
@@ -75,14 +75,23 @@ async function run() {
     })
 
     app.patch('/tuition/:id', async (req, res) => {
-      const id = req.params.id
-      const { status } = req.body
-      const result = await tuitionCollection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: { status } })
-      const update = await tuitionCollection.findOne({ _id: new ObjectId(id) })
-      res.send(update)
-    })
+        const id = req.params.id;
+        const updateData = { ...req.body, status: 'Pending' };
+
+        const result = await tuitionCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateData }
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: 'Tuition not found' });
+        }
+
+        const updatedTuition = await tuitionCollection.findOne({ _id: new ObjectId(id) });
+        res.send(updatedTuition);
+      
+    });
+
 
     app.post('/create-checkout-session', async (req, res) => {
       try {
@@ -104,6 +113,8 @@ async function run() {
           metadata: {
             tutorId: paymentInfo.tutorId,
             studentEmail: paymentInfo.student.email,
+            studentName: paymentInfo.student.name
+            // d,
           },
           success_url: `${process.env.CLIENT_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${process.env.CLIENT_DOMAIN}/student/${paymentInfo?.tutorId}`,
@@ -117,7 +128,6 @@ async function run() {
     });
 
 
-    // Payment success route
     app.post('/payment-success', async (req, res) => {
       const { sessionId } = req.body;
       const session = await stripe.checkout.sessions.retrieve(sessionId);
@@ -125,7 +135,6 @@ async function run() {
       console.log(session)
       console.log(tutorId)
       console.log(sessionId)
-      // const studentEmail = session.metadata.studentEmail;
 
       const existingPayment = await paymentCollection.findOne({
         transactionId: session.payment_intent
@@ -134,7 +143,8 @@ async function run() {
       if (!existingPayment) {
         const paymentData = {
           tutorId: new ObjectId(tutorId),
-          // studentEmail,
+          studentEmail: session.customer_email,
+          studentName: session.metadata.studentName,
           transactionId: session.payment_intent,
           amount: session.amount_total / 100,
           status: "Success",
@@ -148,7 +158,6 @@ async function run() {
         { $set: { status: "Approved" } }
       );
 
-      // Update tuition document
       await tuitionCollection.updateOne(
         { status: "Pending" },
         { $set: { status: "Approved", tutorId: new ObjectId(tutorId) } }
@@ -167,9 +176,16 @@ async function run() {
     });
 
     app.get('/payment', async (req, res) => {
-      const payments = await paymentCollection.find().toArray();
+      const payments = await paymentCollection
+        .find()
+        .sort({ date: -1 })
+        .toArray();
+
       res.send(payments);
     });
+
+
+
 
     app.post('/tutor', async (req, res) => {
       const tutorData = req.body
@@ -249,7 +265,7 @@ async function run() {
       res.send(result)
     })
 
-    // Update a user
+
     app.patch('/user/:id', verifyJWT, verifyADMIN, async (req, res) => {
       const id = req.params.id;
       const { _id, ...updatedData } = req.body; // remove _id
@@ -262,7 +278,7 @@ async function run() {
     });
 
 
-    // Delete a user
+
     app.delete('/user/:id', verifyJWT, verifyADMIN, async (req, res) => {
       const id = req.params.id;
       const result = await usersCollection.deleteOne({ _id: new ObjectId(id) });
@@ -273,7 +289,7 @@ async function run() {
 
 
 
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
