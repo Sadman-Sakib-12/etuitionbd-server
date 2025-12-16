@@ -45,7 +45,7 @@ const client = new MongoClient(process.env.MONGODB_URI, {
 
 async function run() {
   try {
-    // await client.connect();
+    await client.connect();
 
     const db = client.db('tuition-db')
     const usersCollection = db.collection('users')
@@ -158,14 +158,6 @@ async function run() {
 
     });
 
-    app.get('/tuitions/tutor/approved/:tutorId', async (req, res) => {
-      const { tutorId } = req.params;
-      const tuitions = await tuitionCollection
-        .find({ tutorId: new ObjectId(tutorId), status: 'Approved' })
-        .toArray();
-      res.send(tuitions);
-    });
-
 
 
     app.delete('/tuition/:id', async (req, res) => {
@@ -191,14 +183,21 @@ async function run() {
     })
 
     app.patch('/tutor/:id', async (req, res) => {
-      const id = req.params.id
-      const { status } = req.body
+      const id = req.params.id;
+
+      const tutor = await tutorCollection.findOne({ _id: new ObjectId(id) });
+      if (tutor.status === 'Approved') {
+        return res.status(400).send({ message: 'Approved tutor cannot be edited' });
+      }
+
       const result = await tutorCollection.updateOne(
         { _id: new ObjectId(id) },
-        { $set: { status } })
-      const update = await tutorCollection.findOne({ _id: new ObjectId(id) })
-      res.send(update)
-    })
+        { $set: req.body }
+      );
+
+      res.send(result);
+    });
+
     app.delete('/tutor/:id', async (req, res) => {
       const id = req.params.id;
       const result = await tutorCollection.deleteOne({ _id: new ObjectId(id) });
