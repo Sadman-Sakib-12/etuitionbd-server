@@ -8,12 +8,14 @@ const decoded = Buffer.from(process.env.FB_SERVICE_KEY, 'base64').toString('utf-
 const serviceAccount = JSON.parse(decoded);
 const port = process.env.PORT || 3000
 const app = express();
-app.use(cors({
-  origin: [process.env.CLIENT_DOMAIN],
-  credentials: true,
-  optionsSuccessStatus: 200,
-}));
-
+app.use(
+  cors({
+    origin: ["http://localhost:5173", process.env.CLIENT_DOMAIN],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    allowedHeaders: ["Content-Type",'Authorization'],
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 admin.initializeApp({
@@ -75,21 +77,21 @@ async function run() {
     })
 
     app.patch('/tuition/:id', async (req, res) => {
-        const id = req.params.id;
-        const updateData = { ...req.body, status: 'Pending' };
+      const id = req.params.id;
+      const updateData = { ...req.body, status: 'Pending' };
 
-        const result = await tuitionCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: updateData }
-        );
+      const result = await tuitionCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updateData }
+      );
 
-        if (result.matchedCount === 0) {
-          return res.status(404).send({ message: 'Tuition not found' });
-        }
+      if (result.matchedCount === 0) {
+        return res.status(404).send({ message: 'Tuition not found' });
+      }
 
-        const updatedTuition = await tuitionCollection.findOne({ _id: new ObjectId(id) });
-        res.send(updatedTuition);
-      
+      const updatedTuition = await tuitionCollection.findOne({ _id: new ObjectId(id) });
+      res.send(updatedTuition);
+
     });
 
 
