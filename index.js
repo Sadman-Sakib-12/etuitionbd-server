@@ -12,7 +12,7 @@ app.use(
   cors({
     origin: ["http://localhost:5173", process.env.CLIENT_DOMAIN],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
-    allowedHeaders: ["Content-Type",'Authorization'],
+    allowedHeaders: ["Content-Type", 'Authorization'],
     credentials: true,
   })
 );
@@ -65,11 +65,20 @@ async function run() {
       next()
     }
 
+    // app.post('/tuition', async (req, res) => {
+    //   const tuitionData = req.body
+    //   const result = await tuitionCollection.insertOne(tuitionData)
+    //   res.send(result)
+    // })
     app.post('/tuition', async (req, res) => {
-      const tuitionData = req.body
-      const result = await tuitionCollection.insertOne(tuitionData)
-      res.send(result)
-    })
+      const tuitionData = req.body;
+      if (!tuitionData.createdAt) {
+        tuitionData.createdAt = new Date().toISOString();
+      }
+
+      const result = await tuitionCollection.insertOne(tuitionData);
+      res.send(result);
+    });
     app.get('/tuition', async (req, res) => {
 
       const result = await tuitionCollection.find().toArray()
@@ -77,22 +86,32 @@ async function run() {
     })
 
     app.patch('/tuition/:id', async (req, res) => {
-      const id = req.params.id;
-      const updateData = { ...req.body, status: 'Pending' };
+      try {
+        const id = req.params.id;
+        const { status } = req.body; // only take status from frontend
 
-      const result = await tuitionCollection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: updateData }
-      );
+        if (!['Pending', 'Approved', 'Rejected'].includes(status)) {
+          return res.status(400).send({ message: 'Invalid status value' });
+        }
 
-      if (result.matchedCount === 0) {
-        return res.status(404).send({ message: 'Tuition not found' });
+        // Update only the status
+        const result = await tuitionCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { status } }
+        );
+
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: 'Tuition not found' });
+        }
+
+        const updatedTuition = await tuitionCollection.findOne({ _id: new ObjectId(id) });
+        res.send(updatedTuition);
+      } catch (error) {
+        console.error('Error updating tuition status:', error);
+        res.status(500).send({ message: 'Server error', error });
       }
-
-      const updatedTuition = await tuitionCollection.findOne({ _id: new ObjectId(id) });
-      res.send(updatedTuition);
-
     });
+
 
 
     app.post('/create-checkout-session', async (req, res) => {
@@ -288,8 +307,42 @@ async function run() {
     });
 
 
+ 
+app.get('/Overview', verifyJWT, async (req, res) => {
+  try {
+    const email = req.tokenEmail;
+    const user = await usersCollection.findOne({ email });
+    
+    
+    const totalUsers = await usersCollection.estimatedDocumentCount();
+    const totalTuition = await tuitionCollection.estimatedDocumentCount();
+    const totalTutors = await tutorCollection.estimatedDocumentCount();
+    
+   
+    const allPayments = await paymentCollection.find().toArray() || [];
+    const paymentCount = allPayments.length; 
+    const revenue = allPayments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
 
+  
+    const chartData = allPayments.map(p => ({
+      date: p.date ? new Date(p.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : 'N/A',
+      amount: parseFloat(p.amount) || 0
+    })).slice(-7);
 
+    res.send({ 
+      users: totalUsers, 
+      tuition: totalTuition, 
+      tutors: totalTutors,
+      payments: paymentCount, 
+      revenue: user.role === 'admin' ? revenue : 'Restricted', 
+      chartData,
+      userRole: user?.role || 'student'
+    });
+  } catch (error) {
+    console.error("Stats Error:", error);
+    res.status(500).send({ message: "Error", error: error.message });
+  }
+});
 
     // await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
